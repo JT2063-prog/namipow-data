@@ -1,0 +1,24 @@
+name: Fetch snow data
+on:
+  schedule:
+    - cron: '17 */3 * * *'   # every 3 hours
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency: fetch
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node fetch.js
+      - name: Commit if changed
+        run: |
+          git config user.name "namipow-bot"
+          git config user.email "namipow-bot@users.noreply.github.com"
+          git add forecast.json depth.json
+          git diff --cached --quiet || (git commit -m "Snow data $(date -u +%Y-%m-%dT%H:%MZ)" && git push)
