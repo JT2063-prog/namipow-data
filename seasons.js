@@ -7,6 +7,8 @@
 const fs = require('fs');
 const BASE = 'https://www.data.jma.go.jp/obd/stats/etrn/';
 const PREC = 48; // Nagano
+// Shiga has no JMA station; Sugadaira (1,253 m, ~25 km) is the nearest high plateau station.
+const PREFER = { shiga: '菅平' };
 const MOUNTAINS = { happo: [36.697, 137.833], goryu: [36.665, 137.833], nozawa: [36.922, 138.444], shiga: [36.722, 138.469] };
 const SEASONS = 7, MONTHS = [11, 12, 1, 2, 3, 4];
 const log = [];
@@ -55,7 +57,7 @@ async function main() {
   say('candidates', snowy.map(s => `${s.name}(${s.id},${s.type},${s.elev}m,${s.flags})`).join(' '));
   const pick = {}, used = {};
   for (const [k, p] of Object.entries(MOUNTAINS)) {
-    const near = snowy.map(s => Object.assign({}, s, { d: km(p, [s.lat, s.lon]) })).sort((a, b) => a.d - b.d);
+    const near = snowy.map(s => Object.assign({}, s, { d: km(p, [s.lat, s.lon]) })).sort((a, b) => (b.name === PREFER[k]) - (a.name === PREFER[k]) || a.d - b.d);
     say(k, 'nearest', near.slice(0, 4).map(s => `${s.name} ${s.d.toFixed(1)}km`).join(', '));
     // Use the nearest station that has a snow-depth sensor; test by reading one winter month.
     for (const s of near.slice(0, 4)) {
@@ -74,7 +76,8 @@ async function main() {
   const thisSeason = now.getUTCMonth() + 1 >= 8 ? now.getUTCFullYear() : now.getUTCFullYear() - 1;
   const seasons = (prev && prev.seasons) || {};
   const stationsOut = {};
-  for (const s of new Set(Object.values(pick))) {
+  const uniq = {}; Object.values(pick).forEach(s => { uniq[s.id] = s; });
+  for (const s of Object.values(uniq)) {
     stationsOut[s.id] = { name: s.name, elev: s.elev, lat: +s.lat.toFixed(4), lon: +s.lon.toFixed(4), type: s.type, km: {} };
     seasons[s.id] = seasons[s.id] || {};
     for (let y = thisSeason - SEASONS + 1; y <= thisSeason; y++) {
@@ -94,7 +97,8 @@ async function main() {
       say(s.name, label, Object.keys(S).length, 'days');
     }
   }
-  for (const [k, s] of Object.entries(pick)) stationsOut[s.id].km[k] = +s.d.toFixed(1);
+  for (const [k, s] of Object.entries(pick)) stationsOut[s.id].km[k] = +km(MOUNTAINS[k], [s.lat, s.lon]).toFixed(1);
+  for (const id of Object.keys(seasons)) if (!stationsOut[id]) delete seasons[id];
   const mountains = Object.fromEntries(Object.entries(pick).map(([k, s]) => [k, s.id]));
   if (!Object.keys(mountains).length) return finish(prev);
   fs.writeFileSync('seasons.json', JSON.stringify({ at: new Date().toISOString(), source: 'Japan Meteorological Agency (AMeDAS daily data)', stations: stationsOut, mountains, seasons }));
